@@ -9,7 +9,7 @@ from utils import set_axes, savefig, find_first_peaks
 matplotlib.use('MacOSX')
 plt.style.use('simprop.mplstyle')
 
-MODEL = 'yy'  # Define the model type
+MODEL = 'xy'  # Define the model type
 
 def get_data(string_E: str, N: int):
     """
@@ -55,7 +55,7 @@ def fit_diffusion(initial_params: list, string_E: str, max_t: float, N: int):
     def chi2_function(A, omega, tau):
         if MODEL == 'xx' or MODEL == 'yy':
             chi2 = np.sum(((A * np.cos(omega * x) * np.exp(-x / tau) - R) / std_R) ** 2)
-        elif MODEL == 'zz':
+        elif MODEL == 'xy':
             chi2 = np.sum(((A * np.sin(omega * x) * np.exp(-x / tau) - R) / std_R) ** 2)
         return chi2
     
