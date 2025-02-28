@@ -57,17 +57,24 @@ def set_axes(ax: plt.Axes, xlabel: str, ylabel: str, xscale: str = 'linear', ysc
         ax.set_ylim(ylim)
 
 def find_first_peaks(x, y, npeaks=3):
-    # Find all peaks
+    """
+    Identify the first N peaks in the data.
+    
+    Parameters:
+        x (np.ndarray): Array of x values.
+        y (np.ndarray): Array of y values.
+        npeaks (int): Number of peaks to identify (default: 3).
+    
+    Returns:
+        tuple: (peak_positions, first_peaks)
+    """
     peaks, _ = find_peaks(y)
     
-    # Check if there are at least N peaks
     if len(peaks) < npeaks:
-        raise ValueError(f'Less than {npeaks} peaks found in the data.')
+        print(f"Warning: Only {len(peaks)} peaks found, expected {npeaks}.")
+        npeaks = len(peaks)
     
-    # Get the positions of the first three peaks
     first_peaks = peaks[:npeaks]
-    
-    # Get the x positions of the first three peaks
     peak_positions = x[first_peaks]
     
     return peak_positions, first_peaks
