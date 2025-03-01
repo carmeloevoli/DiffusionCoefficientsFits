@@ -9,7 +9,8 @@ from utils import set_axes, savefig, find_first_peaks
 matplotlib.use('MacOSX')
 plt.style.use('simprop.mplstyle')
 
-MODEL = 'xy'  # Define the model type
+MODEL = 'yy'  # Define the model type
+CLIGHT = 299792458  # Speed of light in m/s
 
 def get_data(string_E: str, N: int):
     """
@@ -24,7 +25,8 @@ def get_data(string_E: str, N: int):
         return None, None, None
 
     std_R = np.sqrt(var_R) / np.sqrt(N)
-    return x / 1e9, R / 1e16, std_R / 1e16  # Normalize data
+    c2_3 = CLIGHT**2. / 3.
+    return x / 1e1, R / c2_3, std_R / c2_3  # Normalize data
 
 def plot_data(ax, string_E: str, nparticles: int, npeaks: int):
     """
@@ -34,12 +36,10 @@ def plot_data(ax, string_E: str, nparticles: int, npeaks: int):
     if x is None:
         return None, None, None
 
-    i = x < 1e6
-    ax.errorbar(x[i], R[i], yerr=std_R[i], color='tab:orange', fmt='o', capsize=5)
+    i = x < 1e16
+    ax.errorbar(x[i], R[i], yerr=std_R[i], color='tab:orange', fmt='o', capsize=5, label=f'{MODEL}')
 
     peak_positions, peaks = find_first_peaks(x, R, npeaks)
-    for peak_position in peak_positions:
-        ax.axvline(peak_position, color='tab:gray', ls='--', lw=1.5)
     
     return peak_positions, R[peaks], R[0]
 
@@ -52,15 +52,15 @@ def fit_diffusion(initial_params: list, string_E: str, max_t: float, N: int):
     i = x < max_t
     x, R, std_R = x[i], R[i], std_R[i]
     
-    def chi2_function(A, omega, tau):
+    def chi2_function(A, omega, rho):
         if MODEL == 'xx' or MODEL == 'yy':
-            chi2 = np.sum(((A * np.cos(omega * x) * np.exp(-x / tau) - R) / std_R) ** 2)
+            chi2 = np.sum(((A * np.cos(omega * x) * np.exp(-rho * x) - R) / std_R) ** 2)
         elif MODEL == 'xy':
-            chi2 = np.sum(((A * np.sin(omega * x) * np.exp(-x / tau) - R) / std_R) ** 2)
+            chi2 = np.sum(((A * np.sin(omega * x) * np.exp(-rho * x) - R) / std_R) ** 2)
         return chi2
     
-    A, omega, tau = initial_params
-    m = Minuit(chi2_function, A=A, omega=omega, tau=tau)
+    A, omega, rho = initial_params
+    m = Minuit(chi2_function, A=A, omega=omega, rho=rho)
     m.errordef = Minuit.LEAST_SQUARES
     
     try:
@@ -78,37 +78,40 @@ def plot_fit(string_E: str, nparticles: int, npeaks: int):
     Perform data plotting and fitting.
     """
     fig, ax = plt.subplots(figsize=(14.5, 8.5))
-    xlabel, ylabel = r'time', fr'$R_{MODEL}$'
+    xlabel, ylabel = r'$c t / r_L$', r'$3R/c^2$'
 
     peak_positions, peaks, R0 = plot_data(ax, string_E, nparticles, npeaks)
     if peak_positions is None:
         return None, None
+
+    for peak_position, peak in zip(peak_positions, peaks):
+        ax.axvline(peak_position, color='tab:gray', ls='--', lw=1.5)
     
     max_t = peak_positions[-1]
-    set_axes(ax, xlabel, ylabel, xlim=[0, max_t], ylim=[-3.3, 3.3])
+    set_axes(ax, xlabel, ylabel, xlim=[0, max_t], ylim=[-1.2, 1.2])
     
     distance_peaks = peak_positions[1] - peak_positions[0]
     omega = 2 * math.pi / distance_peaks
     
-    fit = np.polyfit(np.log(peak_positions), np.log(peaks), 1)
-    tau = fit[1]
-    
-    values = [R0, omega, tau]
+    fit = np.polyfit(peak_positions, np.log(peaks), 1)
+    rho = -fit[0]
+ 
+    values = [R0, omega, rho]
     print(f'Initial parameters: {values}')
-    
     values, errors, fval, dof = fit_diffusion(values, string_E, max_t, nparticles)
     if values is None:
         return None, None
     
-    print(f'Final parameters: A={values[0]:.3f}±{errors[0]:.3f}, omega={values[1]:.2e}±{errors[1]:.2e}, tau={values[2]:.3f}±{errors[2]:.3f}, Chi2/dof={fval:.3f}/{dof}')
+    print(f'Final parameters: A={values[0]:.3f}±{errors[0]:.3f}, omega={values[1]:.2e}±{errors[1]:.2e}, rho={values[2]:.3e}±{errors[2]:.3e}, Chi2/dof={fval:.3f}/{dof}')
     
     t = np.linspace(0, max_t, 1000)
     if MODEL == 'xx' or MODEL == 'yy':
-        y = values[0] * np.cos(values[1] * t) * np.exp(-t / values[2])
+        y = values[0] * np.cos(values[1] * t) * np.exp(-values[2] * t)
     elif MODEL == 'xy':
-        y = values[0] * np.sin(values[1] * t) * np.exp(-t / values[2])
-    ax.plot(t, y, 'tab:blue', lw=3, label='Fit', zorder=10) 
-    
+        y = values[0] * np.sin(values[1] * t) * np.exp(-values[2] * t)
+    ax.plot(t, y, 'tab:blue', lw=3, label='fit', zorder=10) 
+
+    ax.legend()   
     savefig(fig, f'R_{MODEL}_{string_E}.pdf')
     return values, errors
 
@@ -119,7 +122,10 @@ if __name__ == '__main__':
               ('1.2', 30), ('1.4', 33), ('1.6', 33), ('1.8', 20), ('2.0', 14)]
     
     with open(f'R{MODEL}_fit_params.txt', 'w') as f:
+        f.write('# Energy A A_err omega omega_err rho rho_err\n')
         for string_E, npeaks in models:
             params, errors = plot_fit(string_E, N, npeaks)
             if params:
                 f.write(f'{string_E} {params[0]:.3e} {errors[0]:.3e} {params[1]:.3e} {errors[1]:.3e} {params[2]:.3e} {errors[2]:.3e}\n')
+
+
